@@ -21,7 +21,7 @@ open Newtonsoft.Json.Linq
 open Deedle
 open NeXL.IMF
 
-let response = Http.Request("http://dataservices.imf.org/REST/SDMX_JSON.svc/Dataflow/", [], silentHttpErrors = true)
+let response = Http.Request("http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/BOP/A.DE+FR.BXSOFI_BP6_EUR?startPeriod=2000&endPeriod=2001", [], silentHttpErrors = true)
 
 let res =
     match response.Body with  
@@ -35,9 +35,12 @@ let res =
                 printfn "%A" err
                 None
             else
-                let dataflow = JsonConvert.DeserializeObject<StructureJson>(json) 
-                Some dataflow
+                //let dataflow = JsonConvert.DeserializeObject<CompactDataResponse>(json) 
+                let data = JsonValue.Parse json
+                Some data
                 //return XlTable.Create(countries, String.Empty, String.Empty, false, transposed, headers)
         | Binary(_) -> None
 
-let v = res.Value.Structure.Dataflows.Dataflow.[0].KeyFamilyRef.KeyFamilyID
+let v = res.Value
+let vv = v.GetProperty("CompactData").GetProperty("DataSet").GetProperty("Series")
+let props = vv.AsArray().[0].Properties

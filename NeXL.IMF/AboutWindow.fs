@@ -11,8 +11,8 @@ open System.Windows.Navigation
 open System.Windows.Media.Imaging
 open System.Reflection
 open NeXL.ManagedXll
-open NeXL.ManagedXll.StateManager
-open NeXL.ManagedXll.GlobalNames
+open StateManager
+open GlobalNames
 
 [<XlInvisible>]
 module AboutWindow =

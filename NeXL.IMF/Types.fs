@@ -31,19 +31,128 @@ type DataflowItemJson =
     }
 
 [<XlInvisible>]
+type DatasetInfo =
+    {
+     DatasetId : string
+     Description : string
+    }
+
+[<XlInvisible>]
 type DataflowJson =
     {
      Dataflow : DataflowItemJson[]
     }
 
 [<XlInvisible>]
-type DataflowsJson =
+type DataflowStructureJson =
     {
      Dataflows : DataflowJson
     }
 
 [<XlInvisible>]
-type StructureJson =
+type DataflowStructureResponse =
     {
-     Structure : DataflowsJson
+     Structure : DataflowStructureJson
     }
+
+[<XlInvisible>]
+type DimensionItemJson =
+    {
+     ``@conceptRef`` : string
+     ``@codelist`` : string
+    }
+
+[<XlInvisible>]
+type DimensionInfo =
+    {
+     Name : string
+     CodeList : string
+    }
+
+[<XlInvisible>]
+type ComponentsJson =
+    {
+        Dimension : DimensionItemJson[]
+    }
+
+[<XlInvisible>]
+type KeyFamilyJson =
+    {
+     ``@id`` : string
+     ``@version`` : string
+     ``@agencyId`` : string
+     Name : NameJson
+     Components : ComponentsJson
+    }
+
+[<XlInvisible>]
+type KeyFamiliesJson =
+    {
+     KeyFamily : KeyFamilyJson
+    }
+
+[<XlInvisible>]
+type DatasetStructureJson =
+    {
+     KeyFamilies : KeyFamiliesJson
+    }
+
+[<XlInvisible>]
+type DatasetStructureResponse =
+    {
+     Structure : DatasetStructureJson
+    }
+
+[<XlInvisible>]
+type CodeItemJson =
+    {
+     ``@value`` : string
+     Description : NameJson
+    }
+
+[<XlInvisible>]
+type Code =
+    {
+     Value : string
+     Description : string
+    }
+
+[<XlInvisible>]
+type CodeListJson =
+    {
+     ``@id`` : string
+     ``@version`` : string
+     ``@agencyId`` : string
+     Name : NameJson
+     Code : CodeItemJson[]
+    }
+
+[<XlInvisible>]
+type CodeListsJson =
+    {
+     CodeList : CodeListJson
+    }
+
+[<XlInvisible>]
+type CodeListStructureJson =
+    {
+     CodeLists : CodeListsJson
+    }
+
+[<XlInvisible>]
+type CodeListResponse =
+    {
+     Structure : CodeListStructureJson
+    }
+
+
+
+
+
+
+
+
+
+
+
+
