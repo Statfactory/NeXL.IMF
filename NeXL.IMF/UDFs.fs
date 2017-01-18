@@ -71,7 +71,7 @@ module IMF =
             | 14 -> 100000000000000m
             | 15 -> 1000000000000000m
             | 16 -> 10000000000000000m
-            | _ -> raise (new NotImplementedException())
+            | _ -> raise (new NotImplementedException("Multiplier > 10 ^ 16"))
 
     let private dataflowUrl = "http://dataservices.imf.org/REST/SDMX_JSON.svc/Dataflow/"
 
@@ -79,7 +79,7 @@ module IMF =
 
     let private getCodeListUrl codeList = sprintf "http://dataservices.imf.org/REST/SDMX_JSON.svc/CodeList/%s" codeList
 
-    let private getCompactDataUrl datasetId freq dim1 dim2 = sprintf "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/%s/%s.%s.%s" datasetId freq dim1 dim2
+    let private getCompactDataUrl datasetId freq dims = sprintf "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/%s/%s.%s" datasetId freq dims
 
 
     [<XlFunctionHelp("This function will asynchronously return a list of datasets")>]
@@ -100,8 +100,7 @@ module IMF =
                 | Text(json) -> 
                     if response.StatusCode >= 400 then
                         let doc = HtmlDocument.Parse(json)
-                        let body = doc.Body()
-                        let err = body.Descendants ["p"] 
+                        let err = doc.Descendants ["string"] 
                                     |> Seq.map (fun v -> v.InnerText())
                                     |>  String.concat "."
                         raise (new ArgumentException(err))
@@ -134,8 +133,7 @@ module IMF =
                 | Text(json) -> 
                     if response.StatusCode >= 400 then
                         let doc = HtmlDocument.Parse(json)
-                        let body = doc.Body()
-                        let err = body.Descendants ["p"] 
+                        let err = doc.Descendants ["string"] 
                                     |> Seq.map (fun v -> v.InnerText())
                                     |>  String.concat "."
                         raise (new ArgumentException(err))
@@ -168,8 +166,7 @@ module IMF =
                 | Text(json) -> 
                     if response.StatusCode >= 400 then
                         let doc = HtmlDocument.Parse(json)
-                        let body = doc.Body()
-                        let err = body.Descendants ["p"] 
+                        let err = doc.Descendants ["string"] 
                                     |> Seq.map (fun v -> v.InnerText())
                                     |>  String.concat "."
                         raise (new ArgumentException(err))
@@ -187,8 +184,7 @@ module IMF =
     let getSeriesData(
                         [<XlArgHelp("Dataset Id")>] datasetId : string,
                         [<XlArgHelp("Frequency")>] frequency : string,
-                        [<XlArgHelp("Dimension1")>] dimension1 : string[],
-                        [<XlArgHelp("Dimension2")>] dimension2 : string[],
+                        [<XlArgHelp("Dimensions")>] dimensions : string option[],
                         [<XlArgHelp("Start Period")>] startPeriod : string,
                         [<XlArgHelp("End Period")>] endPeriod : string,
                         [<XlArgHelp("Apply unit multiplier (optional, default is FALSE)")>] applyUnitMult : bool option,
@@ -204,15 +200,13 @@ module IMF =
 
             let applyUnitMult = defaultArg applyUnitMult false
 
-            let dim1 = dimension1 |> String.concat "+"
-
-            let dim2 = dimension2 |> String.concat "+"
+            let dims = dimensions |> Array.map (fun d -> match d with | Some(v) -> v | None -> String.Empty) |> String.concat "."
 
             let startPrm = ("startPeriod", startPeriod)
 
             let endPrm = ("endPeriod", endPeriod)
 
-            let! response = Http.AsyncRequest(getCompactDataUrl datasetId frequency dim1 dim2, [startPrm; endPrm], silentHttpErrors = true)
+            let! response = Http.AsyncRequest(getCompactDataUrl datasetId frequency dims, [startPrm; endPrm], silentHttpErrors = true)
 
             match response.Body with  
                 | Text(json) -> 
@@ -227,33 +221,56 @@ module IMF =
                         let jval = JsonValue.Parse json
                         match jval.GetProperty("CompactData").GetProperty("DataSet").TryGetProperty("Series") with
                             | Some(series) ->
-                                let series = series.AsArray()
-                                if startPeriod = endPeriod then
-                                    let data = series |> Array.map (fun v -> 
-                                                                        let refArea = v.GetProperty("@REF_AREA").AsString()
-                                                                        let indicator = v.GetProperty("@INDICATOR").AsString()
-                                                                        let n = v.GetProperty("@UNIT_MULT").AsInteger()
-                                                                        let obs = v.GetProperty("Obs").GetProperty("@OBS_VALUE").AsDecimal()
-                                                                        refArea, indicator, if applyUnitMult then obs * nmult n else obs
-                                                                )
-                                                    |> Frame.ofValues 
-                                                    |> frameToDataTable "Ref Area"
-                                    return XlTable(data, String.Empty, String.Empty, false, transposed, headers)
-                                else
-                                    let data = series |> Seq.collect (fun v -> 
-                                                                        let refArea = v.GetProperty("@REF_AREA").AsString()
-                                                                        let indicator = v.GetProperty("@INDICATOR").AsString()
-                                                                        let n = v.GetProperty("@UNIT_MULT").AsInteger()
-                                                                        let obsArr = v.GetProperty("Obs").AsArray()
-                                                                        obsArr |> Seq.map (fun obs -> 
-                                                                                            let obsVal = obs.GetProperty("@OBS_VALUE").AsDecimal()
-                                                                                            let period = obs.GetProperty("@TIME_PERIOD").AsString()
-                                                                                            period, (sprintf "%s|%s" refArea indicator), if applyUnitMult then obsVal * nmult n else obsVal
-                                                                                        ) 
+                                let series = 
+                                    match series with
+                                        | JsonValue.Array(v) -> v
+                                        | _ -> [|series|]
+
+                                if series.Length > 0 then
+                                    let dims = 
+                                        match series.[0] with 
+                                            | JsonValue.Record(r) ->
+                                                 r |> Array.map fst |> Array.filter (fun x -> x <> "@FREQ" && x <> "@UNIT_MULT" && x <> "@TIME_FORMAT" && x <> "Obs")
+                                            | _ -> raise (new InvalidOperationException())
+                                    if startPeriod = endPeriod && dims.Length = 2 then
+                                        let data = series |> Seq.map (fun v -> 
+                                                                            let dim0 = v.GetProperty(dims.[0]).AsString()
+                                                                            let dim1 = v.GetProperty(dims.[1]).AsString()
+                                                                            let n = v.GetProperty("@UNIT_MULT").AsInteger()
+                                                                            match v.TryGetProperty("Obs") with
+                                                                                | Some(jv) ->
+                                                                                    let obs = jv.GetProperty("@OBS_VALUE").AsDecimal()
+                                                                                    Some(dim0, dim1, if applyUnitMult then obs * nmult n else obs)
+                                                                                | None -> None
                                                                     )
-                                                    |> Frame.ofValues 
-                                                    |> frameToDataTable "Period"
-                                    return XlTable(data, String.Empty, String.Empty, false, transposed, headers)
+                                                        |> Seq.choose id
+                                                        |> Frame.ofValues 
+                                                        |> frameToDataTable (dims.[0].Substring(1))
+                                        return XlTable(data, String.Empty, String.Empty, false, transposed, headers)
+                                    else
+                                        let data = series |> Seq.collect (fun v -> 
+                                                                            let dim = dims |> Array.map (fun x -> v.GetProperty(x).AsString())
+                                                                                           |> String.concat "|"
+                                                                            let n = v.GetProperty("@UNIT_MULT").AsInteger()
+                                                                            match v.TryGetProperty("Obs") with
+                                                                                | Some(jv) ->
+                                                                                    let obsArr = jv.AsArray()
+                                                                                    obsArr |> Seq.filter (fun obs -> obs.TryGetProperty("@OBS_VALUE").IsSome && obs.TryGetProperty("@TIME_PERIOD").IsSome)
+                                                                                           |> Seq.map (fun obs -> 
+                                                                                                        let obsVal = obs.GetProperty("@OBS_VALUE").AsDecimal()
+                                                                                                        let period = obs.GetProperty("@TIME_PERIOD").AsString()
+                                                                                                        period, dim, if applyUnitMult then obsVal * nmult n else obsVal
+                                                                                                    ) 
+                                                                                | None -> Seq.empty
+                                                                        )
+                                                        |> Frame.ofValues 
+                                                        |> frameToDataTable "Period"
+                                        return XlTable(data, String.Empty, String.Empty, false, transposed, headers)
+
+                                else
+                                    raise (new ArgumentException("No series data returned."))
+                                    return XlTable.Empty
+
                             | None ->
                                 raise (new ArgumentException("No series data returned."))
                                 return XlTable.Empty
@@ -262,7 +279,7 @@ module IMF =
                     return XlTable.Empty
              }   
 
-    let getErrors(newOnTop: bool) : IEvent<XlTable> =
+    let getErrors newOnTop =
         UdfErrorHandler.OnError |> Event.scan (fun s e -> e :: s) []
                                 |> Event.map (fun errs ->
                                                   let errs = if newOnTop then errs |> List.toArray else errs |> List.rev |> List.toArray
